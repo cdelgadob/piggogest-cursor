@@ -1,0 +1,16 @@
+{
+  "name": "@piggogest/terraform",
+  "version": "1.0.0",
+  "description": "Terraform infrastructure for Piggogest",
+  "scripts": {
+    "init": "terraform init",
+    "plan": "terraform plan",
+    "apply": "terraform apply",
+    "destroy": "terraform destroy",
+    "validate": "terraform validate",
+    "fmt": "terraform fmt -recursive"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
