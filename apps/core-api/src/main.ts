@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { PinoLoggerService } from './common/logger/logger.service';
 import { PinoHttpInterceptor } from './common/logger/pino-http.interceptor';
+import { GraphQLMetricsInterceptor } from './graphql/graphql-metrics.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -19,6 +20,10 @@ async function bootstrap() {
   // Global logging interceptor
   const loggerService = app.get(PinoLoggerService);
   app.useGlobalInterceptors(new PinoHttpInterceptor(loggerService));
+
+  // Global GraphQL metrics interceptor
+  const graphqlMetricsInterceptor = app.get(GraphQLMetricsInterceptor);
+  app.useGlobalInterceptors(graphqlMetricsInterceptor);
 
   // Enable CORS
   app.enableCors({
