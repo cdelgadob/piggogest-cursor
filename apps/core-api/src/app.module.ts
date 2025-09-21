@@ -5,6 +5,7 @@ import { MetricsModule } from './metrics/metrics.module';
 import { GraphQLModule } from './graphql/graphql.module';
 import { LoggerModule } from './common/logger/logger.module';
 import { TracingModule } from './common/tracing/tracing.module';
+import { DatabaseModule } from './database/database.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { TracingModule } from './common/tracing/tracing.module';
     }),
     LoggerModule,
     TracingModule,
+    DatabaseModule,
     HealthModule,
     MetricsModule,
     GraphQLModule,
