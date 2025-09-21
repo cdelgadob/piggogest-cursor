@@ -1,0 +1,276 @@
+{
+  "name": "PG_EXPD_INTAKE_VALIDATE",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "expediente-validate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "expediente-validate-webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"message\": \"Workflow completed\", \"expedienteId\": $json.expedienteId, \"processedAt\": new Date().toISOString() } }}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CORE_API_BASE_URL }}/api/expedientes/{{ $json.expedienteId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "get-expediente",
+      "name": "Get Expediente from CoreAPI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "documents",
+        "options": {}
+      },
+      "id": "split-documents",
+      "name": "Split Documents",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.downloadUrl }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-document",
+      "name": "Download Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.AZURE_FORM_RECOGNIZER_ENDPOINT }}/formrecognizer/v2.1/prebuilt/document",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Ocp-Apim-Subscription-Key",
+              "value": "={{ $env.AZURE_FORM_RECOGNIZER_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/octet-stream"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "raw",
+        "rawContentType": "application/octet-stream",
+        "body": "={{ $binary.data }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "azure-ocr",
+      "name": "Azure Form Recognizer OCR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Normalize fields function\nconst ocrResult = $input.first().json;\nconst documentType = $input.first().json.documentType || 'unknown';\nconst expedienteId = $('Webhook Trigger').first().json.expedienteId;\n\n// Extract key fields from OCR result\nconst normalizedFields = {\n  expedienteId: expedienteId,\n  documentType: documentType,\n  extractedText: ocrResult.content || '',\n  confidence: ocrResult.analyzeResult?.confidence || 0,\n  pages: ocrResult.analyzeResult?.pages?.length || 0,\n  tables: ocrResult.analyzeResult?.tables?.length || 0,\n  keyValuePairs: {},\n  processedAt: new Date().toISOString()\n};\n\n// Extract key-value pairs if available\nif (ocrResult.analyzeResult?.keyValuePairs) {\n  ocrResult.analyzeResult.keyValuePairs.forEach(pair => {\n    if (pair.key && pair.value) {\n      normalizedFields.keyValuePairs[pair.key.content] = pair.value.content;\n    }\n  });\n}\n\n// Extract tables if available\nif (ocrResult.analyzeResult?.tables) {\n  normalizedFields.tables = ocrResult.analyzeResult.tables.map(table => {\n    return {\n      rowCount: table.rowCount,\n      columnCount: table.columnCount,\n      cells: table.cells.map(cell => ({\n        text: cell.content,\n        confidence: cell.confidence,\n        rowIndex: cell.rowIndex,\n        columnIndex: cell.columnIndex\n      }))\n    };\n  });\n}\n\n// Document-specific field extraction\nswitch (documentType.toLowerCase()) {\n  case 'cedula':\n  case 'dni':\n    normalizedFields.documentNumber = extractDocumentNumber(normalizedFields.extractedText);\n    normalizedFields.fullName = extractFullName(normalizedFields.extractedText);\n    break;\n  case 'factura':\n  case 'invoice':\n    normalizedFields.invoiceNumber = extractInvoiceNumber(normalizedFields.extractedText);\n    normalizedFields.total = extractTotal(normalizedFields.extractedText);\n    normalizedFields.date = extractDate(normalizedFields.extractedText);\n    break;\n  case 'contrato':\n  case 'contract':\n    normalizedFields.contractNumber = extractContractNumber(normalizedFields.extractedText);\n    normalizedFields.parties = extractParties(normalizedFields.extractedText);\n    break;\n}\n\n// Helper functions\nfunction extractDocumentNumber(text) {\n  const patterns = [\n    /\\b\\d{8,12}\\b/g,\n    /\\b[A-Z]\\d{7,11}\\b/g\n  ];\n  \n  for (const pattern of patterns) {\n    const match = text.match(pattern);\n    if (match) return match[0];\n  }\n  return null;\n}\n\nfunction extractFullName(text) {\n  const lines = text.split('\\n');\n  for (const line of lines) {\n    if (line.match(/^[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]+\\s+[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]+/)) {\n      return line.trim();\n    }\n  }\n  return null;\n}\n\nfunction extractInvoiceNumber(text) {\n  const match = text.match(/FACTURA\\s*#?\\s*([A-Z0-9-]+)/i) || \n                text.match(/INVOICE\\s*#?\\s*([A-Z0-9-]+)/i) ||\n                text.match(/No\\.?\\s*([A-Z0-9-]+)/i);\n  return match ? match[1] : null;\n}\n\nfunction extractTotal(text) {\n  const match = text.match(/TOTAL\\s*:?\\s*\\$?([\\d,]+\\.[\\d]{2})/i) ||\n                text.match(/TOTAL\\s*:?\\s*\\$?([\\d,]+)/i);\n  return match ? parseFloat(match[1].replace(/,/g, '')) : null;\n}\n\nfunction extractDate(text) {\n  const match = text.match(/\\b(\\d{1,2}[\\/\\-]\\d{1,2}[\\/\\-]\\d{2,4})\\b/) ||\n                text.match(/\\b(\\d{4}[\\/\\-]\\d{1,2}[\\/\\-]\\d{1,2})\\b/);\n  return match ? match[1] : null;\n}\n\nfunction extractContractNumber(text) {\n  const match = text.match(/CONTRATO\\s*#?\\s*([A-Z0-9-]+)/i) ||\n                text.match(/CONTRACT\\s*#?\\s*([A-Z0-9-]+)/i);\n  return match ? match[1] : null;\n}\n\nfunction extractParties(text) {\n  const lines = text.split('\\n');\n  const parties = [];\n  \n  for (const line of lines) {\n    if (line.match(/ENTRE\\s+[A-ZÁÉÍÓÚÑÜ]/i) || line.match(/BETWEEN\\s+[A-ZÁÉÍÓÚÑÜ]/i)) {\n      parties.push(line.trim());\n    }\n  }\n  return parties;\n}\n\nreturn [{ json: normalizedFields }];"
+      },
+      "id": "normalize-fields",
+      "name": "Normalize Fields Function",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CORE_API_BASE_URL }}/api/expedientes/{{ $('Webhook Trigger').first().json.expedienteId }}/transition",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ {\n  \"documentId\": $('Split Documents').first().json.id,\n  \"normalizedFields\": $json,\n  \"status\": \"validated\",\n  \"processedAt\": new Date().toISOString()\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "coreapi-transition",
+      "name": "CoreAPI Transition",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CLIENT_CALLBACK_URL }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ {\n  \"expedienteId\": $('Webhook Trigger').first().json.expedienteId,\n  \"status\": \"completed\",\n  \"processedDocuments\": $('Split Documents').all().length,\n  \"processedAt\": new Date().toISOString(),\n  \"workflowId\": $workflow.id\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "client-callback",
+      "name": "Client Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Expediente from CoreAPI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Expediente from CoreAPI": {
+      "main": [
+        [
+          {
+            "node": "Split Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Documents": {
+      "main": [
+        [
+          {
+            "node": "Download Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Document": {
+      "main": [
+        [
+          {
+            "node": "Azure Form Recognizer OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Azure Form Recognizer OCR": {
+      "main": [
+        [
+          {
+            "node": "Normalize Fields Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Fields Function": {
+      "main": [
+        [
+          {
+            "node": "CoreAPI Transition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CoreAPI Transition": {
+      "main": [
+        [
+          {
+            "node": "Client Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Client Callback": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "expediente-validation",
+      "name": "Expediente Validation"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

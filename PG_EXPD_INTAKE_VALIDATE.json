@@ -1,0 +1,180 @@
+{
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {},
+    "triggers": {
+      "manual": {
+        "type": "Request",
+        "kind": "Http",
+        "inputs": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "expedienteId": {
+                "type": "string",
+                "title": "Expediente ID"
+              }
+            },
+            "required": ["expedienteId"]
+          }
+        }
+      }
+    },
+    "actions": {
+      "Get_Expediente_From_CoreAPI": {
+        "type": "Http",
+        "inputs": {
+          "method": "GET",
+          "uri": "@{parameters('CoreAPI_BaseURL')}/api/expedientes/@{triggerBody()?['expedienteId']}",
+          "headers": {
+            "Authorization": "Bearer @{parameters('CoreAPI_Token')}",
+            "Content-Type": "application/json"
+          }
+        },
+        "runAfter": {}
+      },
+      "ForEach_Document": {
+        "type": "Foreach",
+        "foreach": "@body('Get_Expediente_From_CoreAPI')?['documents']",
+        "actions": {
+          "Download_Document": {
+            "type": "Http",
+            "inputs": {
+              "method": "GET",
+              "uri": "@{items('ForEach_Document')?['downloadUrl']}",
+              "headers": {
+                "Authorization": "Bearer @{parameters('CoreAPI_Token')}"
+              }
+            },
+            "runAfter": {}
+          },
+          "Azure_Form_Recognizer_OCR": {
+            "type": "Http",
+            "inputs": {
+              "method": "POST",
+              "uri": "https://@{parameters('FormRecognizer_Endpoint')}/formrecognizer/v2.1/prebuilt/document",
+              "headers": {
+                "Ocp-Apim-Subscription-Key": "@{parameters('FormRecognizer_Key')}",
+                "Content-Type": "application/octet-stream"
+              },
+              "body": "@body('Download_Document')"
+            },
+            "runAfter": {
+              "Download_Document": [
+                "Succeeded"
+              ]
+            }
+          },
+          "Normalize_Fields_Function": {
+            "type": "Function",
+            "inputs": {
+              "function": {
+                "id": "@{parameters('NormalizeFunction_AppId')}/@{parameters('NormalizeFunction_Name')}"
+              },
+              "body": {
+                "ocrResult": "@body('Azure_Form_Recognizer_OCR')",
+                "documentType": "@{items('ForEach_Document')?['type']}",
+                "expedienteId": "@{triggerBody()?['expedienteId']}"
+              }
+            },
+            "runAfter": {
+              "Azure_Form_Recognizer_OCR": [
+                "Succeeded"
+              ]
+            }
+          },
+          "CoreAPI_Transition": {
+            "type": "Http",
+            "inputs": {
+              "method": "POST",
+              "uri": "@{parameters('CoreAPI_BaseURL')}/api/expedientes/@{triggerBody()?['expedienteId']}/transition",
+              "headers": {
+                "Authorization": "Bearer @{parameters('CoreAPI_Token')}",
+                "Content-Type": "application/json"
+              },
+              "body": {
+                "documentId": "@{items('ForEach_Document')?['id']}",
+                "normalizedFields": "@body('Normalize_Fields_Function')",
+                "status": "validated",
+                "processedAt": "@{utcNow()}"
+              }
+            },
+            "runAfter": {
+              "Normalize_Fields_Function": [
+                "Succeeded"
+              ]
+            }
+          }
+        },
+        "runAfter": {
+          "Get_Expediente_From_CoreAPI": [
+            "Succeeded"
+          ]
+        }
+      },
+      "Client_Callback": {
+        "type": "Http",
+        "inputs": {
+          "method": "POST",
+          "uri": "@{parameters('ClientCallback_URL')}",
+          "headers": {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer @{parameters('ClientCallback_Token')}"
+          },
+          "body": {
+            "expedienteId": "@{triggerBody()?['expedienteId']}",
+            "status": "completed",
+            "processedDocuments": "@length(body('Get_Expediente_From_CoreAPI')?['documents'])",
+            "processedAt": "@{utcNow()}",
+            "workflowId": "@{workflow()['run']['name']}"
+          }
+        },
+        "runAfter": {
+          "ForEach_Document": [
+            "Succeeded"
+          ]
+        }
+      }
+    },
+    "outputs": {
+      "expedienteId": "@{triggerBody()?['expedienteId']}",
+      "status": "completed",
+      "processedAt": "@{utcNow()}"
+    }
+  },
+  "parameters": {
+    "CoreAPI_BaseURL": {
+      "type": "string",
+      "defaultValue": "https://your-coreapi-instance.azurewebsites.net"
+    },
+    "CoreAPI_Token": {
+      "type": "securestring",
+      "defaultValue": ""
+    },
+    "FormRecognizer_Endpoint": {
+      "type": "string",
+      "defaultValue": "your-formrecognizer.cognitiveservices.azure.com"
+    },
+    "FormRecognizer_Key": {
+      "type": "securestring",
+      "defaultValue": ""
+    },
+    "NormalizeFunction_AppId": {
+      "type": "string",
+      "defaultValue": "/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.Web/sites/{function-app-name}"
+    },
+    "NormalizeFunction_Name": {
+      "type": "string",
+      "defaultValue": "NormalizeDocumentFields"
+    },
+    "ClientCallback_URL": {
+      "type": "string",
+      "defaultValue": "https://your-client-callback-endpoint.com/api/callback"
+    },
+    "ClientCallback_Token": {
+      "type": "securestring",
+      "defaultValue": ""
+    }
+  }
+}
