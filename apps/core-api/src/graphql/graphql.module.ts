@@ -10,6 +10,8 @@ import { EventoExpediente } from '../entities/evento-expediente.entity';
 import { Cliente } from '../entities/cliente.entity';
 import { TramiteCatalogo } from '../entities/tramite-catalogo.entity';
 import { DocumentoReferencia } from '../entities/documento-referencia.entity';
+import { GraphQLMetricsInterceptor } from './graphql-metrics.interceptor';
+import { MetricsModule } from '../metrics/metrics.module';
 
 @Module({
   imports: [
@@ -26,8 +28,9 @@ import { DocumentoReferencia } from '../entities/documento-referencia.entity';
       Cliente,
       TramiteCatalogo,
       DocumentoReferencia
-    ])
+    ]),
+    MetricsModule
   ],
-  providers: [AppResolver, ExpedienteResolver],
+  providers: [AppResolver, ExpedienteResolver, GraphQLMetricsInterceptor],
 })
 export class GraphQLModule {}
