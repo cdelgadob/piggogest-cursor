@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: piggogest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: piggogest
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - piggogest-network
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: piggogest-n8n
+    restart: unless-stopped
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin123
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - N8N_EDITOR_BASE_URL=http://localhost:5678
+      - N8N_DATABASE_TYPE=postgresdb
+      - N8N_DATABASE_POSTGRESDB_HOST=postgres
+      - N8N_DATABASE_POSTGRESDB_PORT=5432
+      - N8N_DATABASE_POSTGRESDB_DATABASE=n8n
+      - N8N_DATABASE_POSTGRESDB_USER=postgres
+      - N8N_DATABASE_POSTGRESDB_PASSWORD=password
+      - N8N_DATABASE_POSTGRESDB_SSL_ENABLED=false
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./apps/n8n/workflows:/home/node/.n8n/workflows
+    depends_on:
+      - postgres
+    networks:
+      - piggogest-network
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: piggogest-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@piggogest.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "8080:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - piggogest-network
+
+volumes:
+  postgres_data:
+    driver: local
+  n8n_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  piggogest-network:
+    driver: bridge

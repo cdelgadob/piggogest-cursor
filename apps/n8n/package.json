@@ -1,0 +1,19 @@
+{
+  "name": "@piggogest/n8n",
+  "version": "1.0.0",
+  "description": "N8N workflows for Piggogest",
+  "scripts": {
+    "dev": "n8n start",
+    "build": "echo 'N8N workflows are built-in'",
+    "test": "echo 'N8N testing not configured'",
+    "lint": "echo 'N8N linting not configured'",
+    "clean": "rm -rf .n8n"
+  },
+  "dependencies": {
+    "@piggogest/shared": "workspace:*",
+    "n8n": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
