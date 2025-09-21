@@ -1,6 +1,6 @@
 import { Resolver, Query, Args, ID, Mutation } from '@nestjs/graphql';
-import { Expediente } from '../entities/expediente.entity';
-import { EventoExpediente } from '../entities/evento-expediente.entity';
+import { Expediente, EstadoExpediente } from '../entities/expediente.entity';
+import { EventoExpediente, TipoEvento, NivelEvento } from '../entities/evento-expediente.entity';
 import { Cliente } from '../entities/cliente.entity';
 import { TramiteCatalogo } from '../entities/tramite-catalogo.entity';
 import { DocumentoReferencia } from '../entities/documento-referencia.entity';
@@ -158,6 +158,119 @@ export class ExpedienteResolver {
         error.stack,
         'OCR'
       );
+      throw error;
+    }
+  }
+
+  @Mutation(() => Expediente)
+  async forceTransition(
+    @Args('expedienteId', { type: () => ID }) expedienteId: string,
+    @Args('newStatus', { type: () => String }) newStatus: string,
+    @Args('reason', { type: () => String }) reason: string,
+    @Args('usuario', { type: () => String, nullable: true }) usuario?: string,
+  ): Promise<Expediente> {
+    try {
+      // Find the expediente
+      const expediente = await this.expedienteRepository.findOne({
+        where: { id: expedienteId },
+        relations: ['cliente', 'tramiteCatalogo']
+      });
+
+      if (!expediente) {
+        throw new Error(`Expediente with ID ${expedienteId} not found`);
+      }
+
+      // Validate new status
+      const validStatuses = Object.values(EstadoExpediente);
+      if (!validStatuses.includes(newStatus as EstadoExpediente)) {
+        throw new Error(`Invalid status: ${newStatus}. Valid statuses are: ${validStatuses.join(', ')}`);
+      }
+
+      // Store old status for audit
+      const oldStatus = expediente.estado;
+
+      // Update expediente status
+      expediente.estado = newStatus as EstadoExpediente;
+      expediente.updatedAt = new Date();
+
+      // If transitioning to completed, set completion date
+      if (newStatus === EstadoExpediente.COMPLETADO) {
+        expediente.fechaCompletado = new Date();
+        expediente.progreso = 100;
+      }
+
+      const updatedExpediente = await this.expedienteRepository.save(expediente);
+
+      // Create audit event
+      const evento = this.eventoRepository.create({
+        expedienteId,
+        tipo: TipoEvento.CAMBIO_ESTADO,
+        nivel: NivelEvento.INFO,
+        titulo: 'Transición de Estado Forzada',
+        descripcion: `Estado cambiado de "${oldStatus}" a "${newStatus}". Motivo: ${reason}`,
+        usuario: usuario || 'Sistema',
+        sistema: 'core-api',
+        datosAdicionales: {
+          oldStatus,
+          newStatus,
+          reason,
+          forcedTransition: true,
+          timestamp: new Date().toISOString()
+        },
+        esAutomatico: false,
+        requiereAtencion: false
+      });
+
+      await this.eventoRepository.save(evento);
+
+      // Record metrics
+      this.metricsService.incrementExpedientesCreated(
+        expedienteId,
+        expediente.cliente?.nombre || 'Unknown'
+      );
+
+      // Log with structured context for audit
+      const logContext: LogContext = {
+        nivel: 'info',
+        servicio: 'core-api',
+        expedienteId,
+        cliente: expediente.cliente?.nombre || 'Unknown',
+        context: 'GraphQL',
+        operation: 'forceTransition',
+        oldStatus,
+        newStatus,
+        reason,
+        usuario: usuario || 'Sistema',
+        auditAction: 'FORCE_TRANSITION'
+      };
+
+      this.logger.logWithContext(
+        `Force transition executed: ${oldStatus} -> ${newStatus}`,
+        logContext
+      );
+
+      return updatedExpediente;
+    } catch (error) {
+      // Log error with structured context
+      const logContext: LogContext = {
+        nivel: 'error',
+        servicio: 'core-api',
+        expedienteId,
+        context: 'GraphQL',
+        operation: 'forceTransition',
+        newStatus,
+        reason,
+        usuario: usuario || 'Sistema',
+        error: error.message,
+        auditAction: 'FORCE_TRANSITION_FAILED'
+      };
+
+      this.logger.error(
+        `Failed to force transition: ${error.message}`,
+        error.stack,
+        logContext
+      );
+
       throw error;
     }
   }
