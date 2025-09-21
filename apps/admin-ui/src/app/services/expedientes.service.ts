@@ -3,7 +3,7 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { Apollo } from 'apollo-angular';
 import { Expediente } from '../models/expediente.model';
-import { GET_EXPEDIENTES, GET_EXPEDIENTE_BY_ID } from '../graphql/queries';
+import { GET_EXPEDIENTES, GET_EXPEDIENTE_BY_ID, FORCE_TRANSITION } from '../graphql/queries';
 
 @Injectable({
   providedIn: 'root'
@@ -31,6 +31,28 @@ export class ExpedientesService {
       })
       .valueChanges.pipe(
         map(result => result.data?.expediente || null)
+      );
+  }
+
+  forceTransition(expedienteId: string, newStatus: string, reason: string, usuario?: string): Observable<Expediente> {
+    return this.apollo
+      .mutate<{ forceTransition: Expediente }>({
+        mutation: FORCE_TRANSITION,
+        variables: {
+          expedienteId,
+          newStatus,
+          reason,
+          usuario
+        },
+        errorPolicy: 'all'
+      })
+      .pipe(
+        map(result => {
+          if (result.errors && result.errors.length > 0) {
+            throw new Error(result.errors[0].message);
+          }
+          return result.data?.forceTransition;
+        })
       );
   }
 }

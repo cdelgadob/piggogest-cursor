@@ -113,3 +113,37 @@ export const GET_EXPEDIENTE_BY_ID = gql`
     }
   }
 `;
+
+export const FORCE_TRANSITION = gql`
+  mutation ForceTransition($expedienteId: String!, $newStatus: String!, $reason: String!, $usuario: String) {
+    forceTransition(expedienteId: $expedienteId, newStatus: $newStatus, reason: $reason, usuario: $usuario) {
+      id
+      numeroExpediente
+      estado
+      descripcion
+      fechaInicio
+      fechaVencimiento
+      fechaCompletado
+      progreso
+      responsable
+      observaciones
+      activo
+      createdAt
+      updatedAt
+      cliente {
+        id
+        nombre
+        apellido
+        email
+        telefono
+        documento
+        tipoDocumento
+      }
+      tramiteCatalogo {
+        id
+        nombre
+        descripcion
+      }
+    }
+  }
+`;
