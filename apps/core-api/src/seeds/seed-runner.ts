@@ -1,5 +1,6 @@
 import { DataSource } from 'typeorm';
 import { TransferenciaV1Seed } from './transferencia-v1.seed';
+import { ExpedientesSeed } from './expedientes.seed';
 import { Cliente } from '../entities';
 
 export class SeedRunner {
@@ -15,6 +16,10 @@ export class SeedRunner {
 
       // Create sample clients
       await this.createSampleClients();
+
+      // Run expedientes seed
+      const expedientesSeed = new ExpedientesSeed(this.dataSource);
+      await expedientesSeed.run();
 
       console.log('All seeds completed successfully!');
     } catch (error) {

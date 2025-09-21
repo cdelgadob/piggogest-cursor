@@ -1,12 +1,15 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterModule } from '@angular/router';
+import { AgGridModule } from 'ag-grid-angular';
+import { ColDef, GridReadyEvent, GridApi, ColumnApi } from 'ag-grid-community';
 import { ExpedientesService } from '../../services/expedientes.service';
-import { Expediente } from '../../models/expediente.model';
+import { Expediente, EstadoExpediente } from '../../models/expediente.model';
 
 @Component({
   selector: 'app-expedientes',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterModule, AgGridModule],
   template: `
     <div class="expedientes-container">
       <div class="card">
@@ -21,33 +24,19 @@ import { Expediente } from '../../models/expediente.model';
             <p>Cargando expedientes...</p>
           </div>
           
-          <div *ngIf="!isLoading" class="table-container">
-            <table class="expedientes-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Estado</th>
-                  <th>Cliente</th>
-                  <th>Fecha Creación</th>
-                  <th>Fecha Actualización</th>
-                  <th>Descripción</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let expediente of expedientes">
-                  <td class="id-cell">{{ expediente.id }}</td>
-                  <td>
-                    <span class="status-badge" [ngClass]="getStatusClass(expediente.estado)">
-                      {{ expediente.estado }}
-                    </span>
-                  </td>
-                  <td class="client-cell">{{ expediente.cliente }}</td>
-                  <td>{{ formatDate(expediente.fechaCreacion) }}</td>
-                  <td>{{ formatDate(expediente.fechaActualizacion) }}</td>
-                  <td class="description-cell">{{ expediente.descripcion }}</td>
-                </tr>
-              </tbody>
-            </table>
+          <div *ngIf="!isLoading" class="ag-grid-container">
+            <ag-grid-angular
+              [rowData]="expedientes"
+              [columnDefs]="columnDefs"
+              [defaultColDef]="defaultColDef"
+              [pagination]="true"
+              [paginationPageSize]="20"
+              [domLayout]="'autoHeight'"
+              [rowSelection]="'single'"
+              (gridReady)="onGridReady($event)"
+              (rowClicked)="onRowClicked($event)"
+              class="ag-theme-alpine">
+            </ag-grid-angular>
           </div>
         </div>
       </div>
@@ -56,7 +45,7 @@ import { Expediente } from '../../models/expediente.model';
   styles: [`
     .expedientes-container {
       padding: 1rem;
-      max-width: 1200px;
+      max-width: 1400px;
       margin: 0 auto;
     }
     
@@ -109,46 +98,16 @@ import { Expediente } from '../../models/expediente.model';
       100% { transform: rotate(360deg); }
     }
     
-    .table-container {
-      overflow-x: auto;
-    }
-    
-    .expedientes-table {
+    .ag-grid-container {
       width: 100%;
-      border-collapse: collapse;
-      margin-top: 1rem;
+      height: 600px;
     }
     
-    .expedientes-table th,
-    .expedientes-table td {
-      padding: 12px;
-      text-align: left;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    
-    .expedientes-table th {
-      background-color: #f5f5f5;
-      font-weight: 600;
-      color: #333;
-    }
-    
-    .expedientes-table tbody tr:hover {
-      background-color: #f9f9f9;
-    }
-    
-    .id-cell {
-      font-weight: bold;
-      color: #667eea;
-    }
-    
-    .client-cell {
-      font-weight: 500;
-    }
-    
-    .description-cell {
-      max-width: 300px;
-      word-wrap: break-word;
-      line-height: 1.4;
+    .ag-theme-alpine {
+      --ag-header-background-color: #f8f9fa;
+      --ag-header-foreground-color: #495057;
+      --ag-border-color: #dee2e6;
+      --ag-row-hover-color: #f8f9fa;
     }
     
     .status-badge {
@@ -165,7 +124,7 @@ import { Expediente } from '../../models/expediente.model';
       color: white;
     }
     
-    .status-en-proceso {
+    .status-en_proceso {
       background-color: #2196f3;
       color: white;
     }
@@ -179,11 +138,150 @@ import { Expediente } from '../../models/expediente.model';
       background-color: #f44336;
       color: white;
     }
+    
+    .status-rechazado {
+      background-color: #9c27b0;
+      color: white;
+    }
+    
+    .expediente-link {
+      color: #667eea;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    
+    .expediente-link:hover {
+      text-decoration: underline;
+    }
+    
+    .progress-bar {
+      position: relative;
+      width: 100%;
+      height: 20px;
+      background-color: #e0e0e0;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4caf50, #8bc34a);
+      transition: width 0.3s ease;
+    }
+    
+    .progress-text {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 12px;
+      font-weight: 500;
+      color: #333;
+    }
+    
+    .event-count {
+      display: inline-block;
+      background-color: #667eea;
+      color: white;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+    }
   `]
 })
 export class ExpedientesComponent implements OnInit {
   expedientes: Expediente[] = [];
   isLoading = true;
+  private gridApi!: GridApi;
+  private gridColumnApi!: ColumnApi;
+
+  columnDefs: ColDef[] = [
+    {
+      headerName: 'Número',
+      field: 'numeroExpediente',
+      width: 150,
+      pinned: 'left',
+      cellRenderer: (params: any) => {
+        return `<a href="/expedientes/${params.value}" class="expediente-link">${params.value}</a>`;
+      }
+    },
+    {
+      headerName: 'Estado',
+      field: 'estado',
+      width: 120,
+      cellRenderer: (params: any) => {
+        const statusClass = this.getStatusClass(params.value);
+        return `<span class="status-badge ${statusClass}">${params.value}</span>`;
+      }
+    },
+    {
+      headerName: 'Cliente',
+      field: 'cliente.nombre',
+      width: 200,
+      valueGetter: (params: any) => {
+        return params.data?.cliente ? `${params.data.cliente.nombre} ${params.data.cliente.apellido}` : '';
+      }
+    },
+    {
+      headerName: 'Email',
+      field: 'cliente.email',
+      width: 200
+    },
+    {
+      headerName: 'Trámite',
+      field: 'tramiteCatalogo.nombre',
+      width: 200
+    },
+    {
+      headerName: 'Progreso',
+      field: 'progreso',
+      width: 100,
+      cellRenderer: (params: any) => {
+        const progress = params.value || 0;
+        return `<div class="progress-bar">
+          <div class="progress-fill" style="width: ${progress}%"></div>
+          <span class="progress-text">${progress}%</span>
+        </div>`;
+      }
+    },
+    {
+      headerName: 'Responsable',
+      field: 'responsable',
+      width: 150
+    },
+    {
+      headerName: 'Fecha Creación',
+      field: 'createdAt',
+      width: 120,
+      valueFormatter: (params: any) => {
+        return params.value ? new Date(params.value).toLocaleDateString('es-ES') : '';
+      }
+    },
+    {
+      headerName: 'Fecha Vencimiento',
+      field: 'fechaVencimiento',
+      width: 120,
+      valueFormatter: (params: any) => {
+        return params.value ? new Date(params.value).toLocaleDateString('es-ES') : '';
+      }
+    },
+    {
+      headerName: 'Eventos',
+      field: 'eventos',
+      width: 80,
+      cellRenderer: (params: any) => {
+        const eventCount = params.data?.eventos?.length || 0;
+        return `<span class="event-count">${eventCount}</span>`;
+      }
+    }
+  ];
+
+  defaultColDef: ColDef = {
+    sortable: true,
+    filter: true,
+    resizable: true
+  };
 
   constructor(private expedientesService: ExpedientesService) {}
 
@@ -205,20 +303,29 @@ export class ExpedientesComponent implements OnInit {
     });
   }
 
-  formatDate(date: Date): string {
-    return new Date(date).toLocaleDateString('es-ES');
+  onGridReady(params: GridReadyEvent) {
+    this.gridApi = params.api;
+    this.gridColumnApi = params.columnApi;
+  }
+
+  onRowClicked(event: any) {
+    const expedienteId = event.data.id;
+    // Navigate to detail view
+    window.location.href = `/expedientes/${expedienteId}`;
   }
 
   getStatusClass(status: string): string {
     switch (status) {
-      case 'Pendiente':
+      case EstadoExpediente.PENDIENTE:
         return 'status-pendiente';
-      case 'En Proceso':
-        return 'status-en-proceso';
-      case 'Completado':
+      case EstadoExpediente.EN_PROCESO:
+        return 'status-en_proceso';
+      case EstadoExpediente.COMPLETADO:
         return 'status-completado';
-      case 'Cancelado':
+      case EstadoExpediente.CANCELADO:
         return 'status-cancelado';
+      case EstadoExpediente.RECHAZADO:
+        return 'status-rechazado';
       default:
         return 'status-pendiente';
     }

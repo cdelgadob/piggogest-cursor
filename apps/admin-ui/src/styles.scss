@@ -41,6 +41,19 @@ body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
   text-align: center;
 }
 
+/* AG Grid Theme */
+@import "ag-grid-community/styles/ag-grid.css";
+@import "ag-grid-community/styles/ag-theme-alpine.css";
+
+.ag-theme-alpine {
+  --ag-header-background-color: #f8f9fa;
+  --ag-header-foreground-color: #495057;
+  --ag-border-color: #dee2e6;
+  --ag-row-hover-color: #f8f9fa;
+  --ag-font-size: 14px;
+  --ag-font-family: 'Roboto', sans-serif;
+}
+
 .ag-theme-material {
   --ag-header-background-color: #f5f5f5;
   --ag-odd-row-background-color: #fafafa;
