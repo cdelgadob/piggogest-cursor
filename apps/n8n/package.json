@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "N8N workflows for Piggogest",
   "scripts": {
-    "dev": "n8n start",
+    "dev": "N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false DB_TYPE=postgresdb DB_POSTGRESDB_HOST=localhost DB_POSTGRESDB_PORT=5432 DB_POSTGRESDB_DATABASE=n8n DB_POSTGRESDB_USER=postgres DB_POSTGRESDB_PASSWORD=password DB_POSTGRESDB_SSL_ENABLED=false pnpm dlx n8n start",
     "build": "echo 'N8N workflows are built-in'",
     "test": "echo 'N8N testing not configured'",
     "lint": "echo 'N8N linting not configured'",
@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@piggogest/shared": "workspace:*",
-    "n8n": "^1.0.0"
+    "n8n": "^1.0.0",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
